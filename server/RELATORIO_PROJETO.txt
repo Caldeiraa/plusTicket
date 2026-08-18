@@ -1,0 +1,715 @@
+================================================================================
+                    RELATÓRIO TÉCNICO DO PROJETO plusTicket
+              Plataforma de Gestão de Eventos com Check-in em Tempo Real
+================================================================================
+
+Data de Geração: 12 de Agosto de 2026
+Versão: 1.0.0
+Autor: plusTicket Development Team
+
+================================================================================
+1. VISÃO GERAL DO PROJETO
+================================================================================
+
+O plusTicket é uma plataforma completa de gestão de eventos que oferece:
+- Cadastro e gerenciamento de eventos
+- Venda de ingressos com múltiplos tipos (Pista, VIP, Camarote)
+- Geração de QR Code único para cada ingresso
+- Check-in em tempo real via leitura de QR Code
+- Dashboard ao vivo com WebSockets mostrando entradas em tempo real
+- Geração assíncrona de PDF de ingressos
+- Envio automático de e-mails via fila de jobs
+- Integração com Stripe para processamento de pagamentos
+
+================================================================================
+2. STACK TECNOLÓGICA
+================================================================================
+
+Componente               | Tecnologia             | Versão
+-------------------------|------------------------|-----------
+Runtime                  | Node.js                | 20+
+Framework HTTP           | Express                | 5.x
+ORM / Database Access    | Prisma                 | 7.x
+Banco de Dados           | MariaDB / MySQL        | 10.x / 8.x
+WebSockets               | Socket.IO              | 4.x
+Fila de Jobs             | BullMQ                 | 6.x
+Cache / Queue Store      | Redis (IORedis)        | 6.x
+Geração de PDF           | PDFKit                 | 0.19.x
+Geração de QR Code       | qrcode (npm)           | 1.5.x
+Envio de E-mail          | Nodemailer             | 9.x
+Autenticação             | JWT (jsonwebtoken)     | 9.x
+Hashing de Senhas        | bcryptjs               | 3.x
+Validação de Dados       | Zod                    | 4.x
+Pagamentos               | Stripe SDK             | 22.x
+Monitoramento de Filas   | Bull Board             | 8.x
+Logging                  | Winston                | 3.x
+Segurança HTTP           | Helmet                 | 8.x
+CORS                     | cors                   | 2.x
+HTTP Logging             | Morgan                 | 1.x
+
+================================================================================
+3. ARQUITETURA DO SISTEMA
+================================================================================
+
+3.1 PADRÃO ARQUITETURAL
+-----------------------
+O projeto segue uma arquitetura modular baseada em:
+- Separação por Módulos/Domínios (Auth, Events, Tickets, Payments, CheckIn, Dashboard)
+- Padrão MVC adaptado: Schema (validação) → Controller → Service
+- Middleware pipeline para autenticação, validação e tratamento de erros
+- Workers assíncronos via filas BullMQ
+- Comunicação em tempo real via Socket.IO (namespace /dashboard)
+
+3.2 DIAGRAMA DE FLUXO SIMPLIFICADO
+-----------------------------------
+
+  [Cliente] → [Express API] → [Controller] → [Service] → [Prisma] → [MariaDB]
+                  ↓                              ↓
+            [Middlewares]                   [BullMQ Queue]
+          (Auth, Validate,                      ↓
+           RoleGuard)                 [Workers assíncronos]
+                                    (PDF, Email, Payment)
+                  ↓
+            [Socket.IO]
+          (Real-time events)
+          
+3.3 FLUXO DE COMPRA DE INGRESSOS
+----------------------------------
+
+  1. Usuário seleciona ingressos → POST /api/tickets/purchase
+  2. Sistema cria Order + Tickets (status: PENDING)
+  3. Frontend solicita Payment Intent → POST /api/payments/create-intent
+  4. Stripe processa pagamento no frontend
+  5. Webhook Stripe confirma → POST /api/payments/webhook
+  6. Sistema atualiza Order (CONFIRMED) e Tickets (PAID)
+  7. Job de PDF é adicionado à fila → pdf-queue
+  8. Worker gera PDF com QR Code
+  9. Job de E-mail é adicionado → email-queue
+  10. Worker envia e-mail com PDF anexado
+  11. WebSocket emite 'ticket:sold' para o dashboard
+
+3.4 FLUXO DE CHECK-IN EM TEMPO REAL
+-------------------------------------
+
+  1. Operador escaneia QR Code → POST /api/checkin
+  2. Sistema valida: ticket existe? Pago? Não usado?
+  3. Transação: Ticket → USED + Cria registro CheckIn
+  4. Socket.IO emite 'checkin:new' para room event:{id}
+  5. Socket.IO emite 'checkin:stats' com estatísticas atualizadas
+  6. Dashboard atualiza em tempo real (sem refresh)
+
+================================================================================
+4. ESTRUTURA DE DIRETÓRIOS
+================================================================================
+
+plusTicket/
+│
+├── prisma/
+│   ├── schema.prisma              # Schema do banco de dados (8 modelos)
+│   └── seed.js                    # Dados iniciais para testes
+│
+├── src/
+│   ├── config/
+│   │   ├── database.js            # Prisma Client (singleton)
+│   │   ├── redis.js               # Conexão Redis para BullMQ
+│   │   ├── socket.js              # Socket.IO setup + emitters
+│   │   ├── stripe.js              # Stripe SDK config
+│   │   └── email.js               # Nodemailer config (Ethereal em dev)
+│   │
+│   ├── middlewares/
+│   │   ├── auth.js                # JWT authentication + optional auth
+│   │   ├── errorHandler.js        # Error handler global (Prisma, Zod, etc.)
+│   │   ├── validate.js            # Validação genérica com Zod
+│   │   └── roleGuard.js           # Controle de acesso por role
+│   │
+│   ├── modules/
+│   │   ├── auth/                  # Autenticação (register, login, refresh)
+│   │   │   ├── auth.schema.js     # Zod schemas
+│   │   │   ├── auth.service.js    # Lógica de negócio
+│   │   │   ├── auth.controller.js # Request/Response handling
+│   │   │   └── auth.routes.js     # Rotas Express
+│   │   │
+│   │   ├── events/                # CRUD de Eventos
+│   │   │   ├── events.schema.js
+│   │   │   ├── events.service.js
+│   │   │   ├── events.controller.js
+│   │   │   └── events.routes.js
+│   │   │
+│   │   ├── tickets/               # Ingressos (tipos, compra, PDF)
+│   │   │   ├── tickets.schema.js
+│   │   │   ├── tickets.service.js
+│   │   │   ├── tickets.controller.js
+│   │   │   └── tickets.routes.js
+│   │   │
+│   │   ├── payments/              # Pagamentos (Stripe)
+│   │   │   ├── payments.schema.js
+│   │   │   ├── payments.service.js
+│   │   │   ├── payments.controller.js
+│   │   │   └── payments.routes.js
+│   │   │
+│   │   ├── checkin/               # Check-in (QR Code + WebSocket)
+│   │   │   ├── checkin.schema.js
+│   │   │   ├── checkin.service.js
+│   │   │   ├── checkin.controller.js
+│   │   │   └── checkin.routes.js
+│   │   │
+│   │   └── dashboard/             # Dashboard (stats ao vivo)
+│   │       ├── dashboard.service.js
+│   │       ├── dashboard.controller.js
+│   │       └── dashboard.routes.js
+│   │
+│   ├── jobs/
+│   │   ├── queues.js              # Definição das 3 filas BullMQ
+│   │   ├── bullboard.js           # Painel de monitoramento de filas
+│   │   └── workers/
+│   │       ├── emailWorker.js     # Worker: envio de e-mails
+│   │       ├── pdfWorker.js       # Worker: geração de PDF com QR Code
+│   │       └── paymentWorker.js   # Worker: processamento de pagamentos
+│   │
+│   ├── services/
+│   │   ├── pdfGenerator.js        # Geração de PDF com PDFKit
+│   │   └── qrCodeGenerator.js     # Geração de QR Code
+│   │
+│   ├── utils/
+│   │   ├── apiResponse.js         # Respostas padronizadas da API
+│   │   └── logger.js              # Winston logger
+│   │
+│   ├── app.js                     # Express app (middlewares + rotas)
+│   └── server.js                  # Entry point (HTTP + Socket.IO + Workers)
+│
+├── uploads/
+│   └── tickets/                   # PDFs gerados dos ingressos
+│
+├── logs/                          # Arquivos de log (Winston)
+│
+├── .env                           # Variáveis de ambiente (local)
+├── .env.example                   # Template de variáveis de ambiente
+├── .gitignore                     # Arquivos ignorados pelo Git
+├── package.json                   # Dependências e scripts npm
+└── RELATORIO_PROJETO.txt          # Este relatório
+
+Total de arquivos do projeto: ~35 arquivos
+
+================================================================================
+5. MODELAGEM DO BANCO DE DADOS
+================================================================================
+
+5.1 MODELOS (TABELAS)
+----------------------
+
+┌─────────────┬────────────────────────────────────────────────────────────────┐
+│ Modelo      │ Descrição                                                     │
+├─────────────┼────────────────────────────────────────────────────────────────┤
+│ User        │ Usuários do sistema (Admin, Organizador, Participante)        │
+│ Event       │ Eventos com local, data, capacidade e status                  │
+│ TicketType  │ Tipos de ingresso por evento (Pista, VIP, etc.)               │
+│ Ticket      │ Ingresso individual com QR Code único                         │
+│ Order       │ Pedido de compra agrupando ingressos                          │
+│ OrderItem   │ Itens do pedido (tipo + quantidade)                           │
+│ Payment     │ Registro de pagamento (Stripe)                                │
+│ CheckIn     │ Registro de check-in com timestamp e localização              │
+└─────────────┴────────────────────────────────────────────────────────────────┘
+
+5.2 ENUMS
+---------
+
+UserRole:      ADMIN | ORGANIZER | ATTENDEE
+EventStatus:   DRAFT | PUBLISHED | CANCELLED | COMPLETED
+TicketStatus:  PENDING | PAID | USED | CANCELLED | REFUNDED
+OrderStatus:   PENDING | CONFIRMED | CANCELLED | REFUNDED
+PaymentStatus: PENDING | PROCESSING | SUCCEEDED | FAILED | REFUNDED
+PaymentMethod: CREDIT_CARD | DEBIT_CARD | PIX | BOLETO
+
+5.3 RELACIONAMENTOS
+--------------------
+
+User (1) ──── (N) Event            → Organizador cria vários eventos
+User (1) ──── (N) Order            → Comprador faz vários pedidos
+User (1) ──── (N) Ticket           → Comprador tem vários ingressos
+Event (1) ──── (N) TicketType      → Evento tem vários tipos de ingresso
+Event (1) ──── (N) Order           → Evento tem vários pedidos
+Event (1) ──── (N) CheckIn         → Evento tem vários check-ins
+TicketType (1) ── (N) Ticket       → Tipo gera vários ingressos
+Order (1) ──── (N) OrderItem       → Pedido tem vários itens
+Order (1) ──── (N) Ticket          → Pedido gera vários ingressos
+Order (1) ──── (1) Payment         → Pedido tem um pagamento
+Ticket (1) ──── (1) CheckIn        → Ingresso tem um check-in
+
+5.4 ÍNDICES
+-----------
+
+- users:        email (UNIQUE), role
+- events:       slug (UNIQUE), date, status, organizerId, city
+- ticket_types: eventId, isActive
+- tickets:      code (UNIQUE), eventId, userId, orderId, status
+- orders:       orderNumber (UNIQUE), userId, eventId, status
+- payments:     externalId (UNIQUE), stripePaymentId, status, orderId (UNIQUE)
+- check_ins:    ticketId (UNIQUE), eventId, checkedAt
+
+================================================================================
+6. ENDPOINTS DA API
+================================================================================
+
+6.1 AUTENTICAÇÃO (/api/auth)
+-----------------------------
+
+Método  Rota              Autenticação  Descrição
+------  ----              ------------  ---------
+POST    /register         Não           Cadastro de novo usuário
+POST    /login            Não           Login (retorna JWT)
+GET     /me               Sim (JWT)     Perfil do usuário logado
+POST    /refresh           Não           Renovar access token
+
+6.2 EVENTOS (/api/events)
+--------------------------
+
+Método  Rota              Autenticação  Role              Descrição
+------  ----              ------------  ----              ---------
+GET     /                 Não           -                 Listar eventos (público, paginado)
+GET     /:id              Não           -                 Detalhes do evento (por ID ou slug)
+POST    /                 Sim           ORGANIZER/ADMIN   Criar evento
+PUT     /:id              Sim           ORGANIZER/ADMIN   Atualizar evento
+POST    /:id/publish      Sim           ORGANIZER/ADMIN   Publicar evento
+DELETE  /:id              Sim           ORGANIZER/ADMIN   Cancelar evento (soft delete)
+GET     /my/events        Sim           ORGANIZER/ADMIN   Meus eventos
+GET     /:id/stats        Sim           ORGANIZER/ADMIN   Estatísticas do evento
+
+Parâmetros de Query para listagem:
+- page (default: 1)
+- limit (default: 10, max: 100)
+- status (DRAFT, PUBLISHED, CANCELLED, COMPLETED)
+- city (filtro por cidade)
+- search (busca por título, descrição, local)
+- startDate / endDate (intervalo de datas)
+- sortBy (date, title, createdAt) / sortOrder (asc, desc)
+
+6.3 INGRESSOS (/api/tickets)
+------------------------------
+
+Método  Rota                              Auth   Role              Descrição
+------  ----                              ----   ----              ---------
+POST    /events/:eventId/ticket-types     Sim    ORGANIZER/ADMIN   Criar tipo de ingresso
+GET     /events/:eventId/ticket-types     Não    -                 Listar tipos de ingresso
+POST    /purchase                         Sim    Qualquer          Comprar ingressos
+GET     /my-tickets                       Sim    Qualquer          Meus ingressos (paginado)
+GET     /:id                              Sim    Dono              Detalhes do ingresso
+GET     /:id/pdf                          Sim    Dono              Download PDF do ingresso
+
+6.4 PAGAMENTOS (/api/payments)
+-------------------------------
+
+Método  Rota              Auth   Descrição
+------  ----              ----   ---------
+POST    /create-intent    Sim    Criar PaymentIntent no Stripe
+POST    /webhook          Não*   Webhook do Stripe (* validado por signature)
+GET     /:id              Sim    Status do pagamento
+
+6.5 CHECK-IN (/api/checkin)
+----------------------------
+
+Método  Rota              Auth   Role              Descrição
+------  ----              ----   ----              ---------
+POST    /                 Sim    ORGANIZER/ADMIN   Realizar check-in via QR Code
+GET     /events/:eventId  Sim    ORGANIZER/ADMIN   Listar check-ins do evento
+
+6.6 DASHBOARD (/api/dashboard)
+-------------------------------
+
+Método  Rota                Auth   Role              Descrição
+------  ----                ----   ----              ---------
+GET     /events/:id/live    Sim    ORGANIZER/ADMIN   Dados ao vivo (real-time ready)
+GET     /events/:id/summary Sim    ORGANIZER/ADMIN   Resumo completo de vendas
+
+6.7 OUTROS
+-----------
+
+GET     /                   Informações da API e lista de endpoints
+GET     /api/health          Health check (uptime, versão, ambiente)
+GET     /admin/queues        Bull Board - Monitoramento de filas (UI)
+
+================================================================================
+7. WEBSOCKETS (SOCKET.IO)
+================================================================================
+
+7.1 CONFIGURAÇÃO
+-----------------
+
+Namespace:  /dashboard
+Transports: websocket, polling
+
+7.2 EVENTS (SERVIDOR → CLIENTE)
+---------------------------------
+
+Evento          Payload                                      Descrição
+------          -------                                      ---------
+checkin:new     { checkInId, ticketCode, holderName,          Novo check-in
+                  ticketType, gate, checkedAt, eventId }
+checkin:stats   { eventId, totalCheckIns, totalTickets,       Estatísticas atualizadas
+                  capacity, occupancyRate }
+ticket:sold     { orderNumber, ticketCount,                   Nova venda de ingresso
+                  eventId, timestamp }
+
+7.3 EVENTS (CLIENTE → SERVIDOR)
+---------------------------------
+
+Evento          Payload        Descrição
+------          -------        ---------
+join:event      eventId        Entrar no room do evento
+leave:event     eventId        Sair do room do evento
+
+7.4 ROOMS
+----------
+
+Padrão: event:{eventId}
+Cada evento tem seu próprio room, garantindo que apenas os organizadores
+do evento recebam os updates em tempo real.
+
+================================================================================
+8. FILAS DE JOBS (BULLMQ)
+================================================================================
+
+8.1 FILAS DEFINIDAS
+--------------------
+
+Fila             Concorrência  Retentativas  Backoff         Descrição
+----             ------------  ------------  -------         ---------
+email-queue      5             3             Exponencial 2s  Envio de e-mails
+pdf-queue        2             2             Exponencial 3s  Geração de PDF
+payment-queue    3             3             Exponencial 5s  Processamento pagamentos
+
+8.2 TIPOS DE JOBS
+------------------
+
+email-queue:
+  - TICKET_CONFIRMED  → E-mail de confirmação com PDF anexado
+  - WELCOME           → E-mail de boas-vindas
+  - ORDER_CONFIRMED   → Confirmação de pedido
+
+pdf-queue:
+  - generate-pdf      → Gera PDF do ingresso com QR Code embutido
+
+payment-queue:
+  - verify            → Verifica status do pagamento
+  - refund            → Processa reembolso
+
+8.3 MONITORAMENTO
+------------------
+
+Bull Board disponível em: http://localhost:3000/admin/queues
+Mostra jobs ativos, concluídos, falhados e atrasados de cada fila.
+
+================================================================================
+9. SISTEMA DE AUTENTICAÇÃO E AUTORIZAÇÃO
+================================================================================
+
+9.1 AUTENTICAÇÃO
+-----------------
+
+- Baseada em JWT (JSON Web Tokens)
+- Access Token: expira em 7 dias (configurável)
+- Refresh Token: expira em 30 dias (configurável)
+- Senhas armazenadas com bcrypt (12 rounds de salt)
+
+9.2 ROLES (PAPÉIS)
+--------------------
+
+Role          Permissões
+----          ----------
+ADMIN         Acesso total ao sistema
+ORGANIZER     Criar/editar eventos, tipos de ingresso, check-in, dashboard
+ATTENDEE      Comprar ingressos, ver meus ingressos
+
+9.3 MIDDLEWARES DE SEGURANÇA
+------------------------------
+
+1. authMiddleware    → Valida JWT, busca usuário no banco, rejeita se inativo
+2. optionalAuth      → Tenta autenticar mas não bloqueia se falhar
+3. roleGuard(roles)  → Verifica se o role do usuário está na lista permitida
+4. validate(schema)  → Valida dados de entrada com Zod
+5. Helmet            → Headers de segurança HTTP
+6. CORS              → Controle de origens permitidas
+
+================================================================================
+10. GERAÇÃO DE PDF E QR CODE
+================================================================================
+
+10.1 QR CODE
+-------------
+
+- Biblioteca: qrcode (npm)
+- Formato: PNG (data URL e Buffer)
+- Tamanho: 300x300px
+- Error Correction: H (máximo, ~30% de recuperação)
+- Conteúdo: Código único do ingresso (ex: TK-A1B2C3D4)
+
+10.2 PDF DO INGRESSO
+----------------------
+
+- Biblioteca: PDFKit
+- Tamanho: 420x600 pontos (personalizado)
+- Layout:
+  ┌────────────────────────────────┐
+  │ HEADER (fundo escuro)          │
+  │ Logo plusTicket + Código       │
+  ├────────────────────────────────┤
+  │                                │
+  │ Nome do Evento                 │
+  │                                │
+  │ 📍 Local / Endereço            │
+  │ 📅 Data e Hora                 │
+  │ 🎫 Tipo de Ingresso            │
+  │ 👤 Nome do Titular             │
+  │                                │
+  │ - - - - - - - - - - - - - - -  │
+  │                                │
+  │        ┌──────────┐            │
+  │        │ QR CODE  │            │
+  │        └──────────┘            │
+  │  Apresente este QR Code       │
+  │                                │
+  ├────────────────────────────────┤
+  │ FOOTER (plusTicket © 2026)     │
+  └────────────────────────────────┘
+
+- Armazenamento: uploads/tickets/ingresso-{code}.pdf
+- Entrega: Download direto via API ou anexo no e-mail
+
+================================================================================
+11. VARIÁVEIS DE AMBIENTE
+================================================================================
+
+Variável                 Descrição                          Exemplo
+--------                 ---------                          -------
+DATABASE_URL             Connection string MariaDB          mysql://root:@localhost:3306/plusticket
+REDIS_HOST               Host do Redis                      localhost
+REDIS_PORT               Porta do Redis                     6379
+REDIS_PASSWORD           Senha do Redis (opcional)          
+JWT_SECRET               Chave secreta do access token      string-aleatória-segura
+JWT_EXPIRES_IN           Expiração do access token          7d
+JWT_REFRESH_SECRET       Chave do refresh token             string-aleatória-segura
+JWT_REFRESH_EXPIRES_IN   Expiração do refresh token         30d
+STRIPE_SECRET_KEY        Chave secreta do Stripe            sk_test_...
+STRIPE_WEBHOOK_SECRET    Secret do webhook Stripe           whsec_...
+SMTP_HOST                Host SMTP                          smtp.ethereal.email
+SMTP_PORT                Porta SMTP                         587
+SMTP_USER                Usuário SMTP                       
+SMTP_PASS                Senha SMTP                         
+SMTP_FROM                Remetente dos e-mails              plusticket@email.com
+PORT                     Porta do servidor                  3000
+NODE_ENV                 Ambiente (development/production)  development
+FRONTEND_URL             URL do frontend (CORS)             http://localhost:5173
+
+================================================================================
+12. COMO EXECUTAR O PROJETO
+================================================================================
+
+12.1 PRÉ-REQUISITOS
+---------------------
+
+- Node.js 20+
+- MariaDB 10+ ou MySQL 8+
+- Redis 7+ (para filas BullMQ)
+
+12.2 INSTALAÇÃO
+----------------
+
+  1. Clonar o repositório
+  2. Instalar dependências:      npm install
+  3. Copiar variáveis:           cp .env.example .env
+  4. Configurar .env com suas credenciais de banco
+  5. Criar o banco de dados:     CREATE DATABASE plusticket;
+  6. Rodar migrations:           npm run db:migrate
+  7. Gerar Prisma Client:        npm run db:generate
+  8. Popular dados de teste:     npm run db:seed
+  9. Iniciar em modo dev:        npm run dev
+
+12.3 SCRIPTS DISPONÍVEIS
+--------------------------
+
+Script              Comando                       Descrição
+------              -------                       ---------
+npm run dev         node --watch src/server.js    Inicia com hot reload
+npm start           node src/server.js            Inicia em produção
+npm run db:generate npx prisma generate           Gera Prisma Client
+npm run db:migrate  npx prisma migrate dev        Cria/aplica migrations
+npm run db:seed     node prisma/seed.js           Popula dados de teste
+npm run db:studio   npx prisma studio             UI do banco de dados
+npm run db:reset    npx prisma migrate reset      Reset total do banco
+
+12.4 CREDENCIAIS DE TESTE (após seed)
+---------------------------------------
+
+Tipo           Email                          Senha
+----           -----                          -----
+Admin          admin@plusticket.com            admin123
+Organizador    organizador@plusticket.com      organizer123
+Participante   participante@email.com          attendee123
+
+================================================================================
+13. SEGURANÇA
+================================================================================
+
+13.1 MEDIDAS IMPLEMENTADAS
+----------------------------
+
+✅ Helmet - Headers de segurança HTTP (XSS, HSTS, etc.)
+✅ CORS - Controle de origens permitidas
+✅ JWT - Autenticação stateless
+✅ bcrypt - Hash de senhas com salt (12 rounds)
+✅ Zod - Validação de todas as entradas
+✅ Prisma - Prevenção de SQL Injection por design
+✅ Role-based access control (RBAC)
+✅ Stripe webhook signature verification
+✅ Rate limiting nas filas de e-mail (10/segundo)
+✅ Expiração de pedidos (30 min sem pagamento → cancelado)
+✅ Limite de ingressos por usuário (maxPerUser)
+
+13.2 RECOMENDAÇÕES PARA PRODUÇÃO
+-----------------------------------
+
+⚠️  Configurar rate limiting na API (express-rate-limit)
+⚠️  Usar HTTPS com certificado SSL
+⚠️  Rotacionar JWT secrets periodicamente
+⚠️  Configurar Redis com senha forte
+⚠️  Usar connection pooling no MariaDB (PgBouncer equivalente)
+⚠️  Implementar refresh token rotation
+⚠️  Configurar WAF (Web Application Firewall)
+⚠️  Ativar logging em serviço externo (DataDog, Sentry, etc.)
+
+================================================================================
+14. TRATAMENTO DE ERROS
+================================================================================
+
+O sistema possui um error handler centralizado que trata:
+
+Tipo de Erro           Código HTTP  Resposta
+-----------            -----------  --------
+Prisma P2002           400          "Já existe um registro com este {campo}"
+Prisma P2025           404          "Registro não encontrado"
+ZodError               400          Lista detalhada de erros de validação
+JWT TokenExpired       401          "Token expirado"
+JWT Invalid            401          "Token inválido"
+JSON Parse Failed      400          "JSON inválido no corpo da requisição"
+Rota não encontrada    404          "Rota {METHOD} {URL} não encontrada"
+Erro genérico          500          "Erro interno do servidor" (produção)
+                                    Mensagem real (desenvolvimento)
+
+Formato de resposta padrão:
+{
+  "success": true/false,
+  "message": "Descrição da operação",
+  "data": { ... } ou null,
+  "errors": [ { "field": "...", "message": "..." } ] (opcional),
+  "timestamp": "2026-08-12T19:46:00.000Z",
+  "pagination": { "page": 1, "limit": 10, "total": 100, "totalPages": 10 } (opcional)
+}
+
+================================================================================
+15. MONITORAMENTO E LOGGING
+================================================================================
+
+15.1 WINSTON (Logs da Aplicação)
+---------------------------------
+
+- Nível: debug (dev) / info (prod)
+- Transports:
+  - Console (colorido, apenas em dev)
+  - logs/error.log (apenas erros, rotação 5MB, max 5 arquivos)
+  - logs/combined.log (todos os níveis, rotação 5MB, max 5 arquivos)
+
+15.2 MORGAN (Logs HTTP)
+-------------------------
+
+- Dev: formato 'dev' (colorido, resumido)
+- Prod: formato 'combined' (Apache-style)
+
+15.3 BULL BOARD (Filas)
+------------------------
+
+- URL: http://localhost:3000/admin/queues
+- Mostra: Jobs ativos, concluídos, falhados, atrasados
+- Filas: email-queue, pdf-queue, payment-queue
+
+================================================================================
+16. POSSÍVEIS EXPANSÕES FUTURAS
+================================================================================
+
+Funcionalidade                Descrição
+--------------                ---------
+OAuth Social                  Login com Google, GitHub, Apple
+Cupons de Desconto            Sistema de cupons e promoções
+Notificações Push             WebPush para notificações no navegador
+Relatórios PDF                Relatórios de vendas em PDF para organizadores
+Pagamento via PIX             Integração PIX via Mercado Pago
+Multi-idioma (i18n)           Suporte a múltiplos idiomas
+Upload de Imagens             Upload de banners para eventos (S3/Cloudinary)
+API Rate Limiting             Limitação de requisições por IP/usuário
+Testes Automatizados          Jest + Supertest para testes de integração
+Docker                        Dockerfile + docker-compose para deploy
+CI/CD                         GitHub Actions para deploy automatizado
+
+================================================================================
+17. RESUMO DE CONTAGEM
+================================================================================
+
+Item                          Quantidade
+----                          ----------
+Modelos do banco de dados     9 (+ TicketTransfer)
+Enums                         6
+Endpoints da API              24
+Middlewares                    4
+Workers BullMQ                3
+Filas                         3
+WebSocket events emitidos     3
+WebSocket events recebidos    2
+Arquivos do projeto           ~40
+Dependências npm              19
+
+================================================================================
+18. NOVAS REGRAS DE NEGÓCIO E MODELO DE MONETIZAÇÃO
+================================================================================
+
+18.1 MONETIZAÇÃO DA PLATAFORMA (RECEITA DO DESENVOLVEDOR)
+-----------------------------------------------------------
+Para garantir a sustentabilidade e lucratividade do sistema, foram estabelecidas
+duas fontes principais de receita:
+
+1. Taxa de Serviço / Conveniência (10%):
+   - Cobrada diretamente do comprador no checkout sobre o valor total dos ingressos.
+   - Discriminada no resumo do pedido e salva no banco (Order.serviceFee).
+   - Exemplo: Ingresso R$ 100,00 + R$ 10,00 (10% Taxa de Serviço) = Total R$ 110,00.
+
+2. Taxa de Saque por Antecipação (5%):
+   - Retida pela plataforma quando um organizador solicita o resgate/saque
+     antecipado dos fundos das vendas antes do término do evento.
+
+18.2 RESTRIÇÕES DE CONTA DE ORGANIZADOR
+---------------------------------------
+1. Bloqueio de Compras:
+   - Contas do tipo ORGANIZER não podem comprar ingressos (validado no backend com 403
+     e desativado no frontend com aviso informativo na página do evento).
+2. Ocultação da Aba "Meus Ingressos":
+   - A aba "Meus Ingressos" é ocultada no menu (Navbar e BottomNav) para organizadores.
+   - Rotas protegidas (/my-tickets) redirecionam organizadores diretamente ao Painel.
+
+18.3 SISTEMA DE TRANSFERÊNCIA DE INGRESSOS POR E-MAIL (ANTI-GOLPE)
+------------------------------------------------------------------
+O recurso de transferência permite repassar um ingresso de forma 100% segura com
+as seguintes diretrizes exatas:
+
+- Destinatário Cadastrado: A transferência é permitida unicamente para e-mails que
+  já possuem conta criada na plataforma.
+- Confirmação em 30 Minutos: Ao enviar a transferência, o status fica PENDING com
+  prazo de 30 minutos para aceite pelo destinatário. Caso expire sem aceite, o ingresso
+  é automaticamente estornado para o remetente original.
+- Limite de Transferências: Cada ingresso permite no máximo 2 transferências.
+- Prazo Limite: Permitido até 2 horas antes do início do evento.
+- Regeneração de QR Code (Segurança Anti-Golpe): Ao confirmar a transferência, o
+  titular é alterado e um novo QR Code exclusivo é gerado. Qualquer PDF ou print antigo
+  é instantaneamente invalidado na portaria.
+
+================================================================================
+                         FIM DO RELATÓRIO
+                    plusTicket v1.0.0 — Agosto 2026
+================================================================================
+

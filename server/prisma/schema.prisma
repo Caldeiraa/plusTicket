@@ -1,0 +1,301 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  ADMIN
+  ORGANIZER
+  ATTENDEE
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+}
+
+enum TicketStatus {
+  PENDING
+  PAID
+  USED
+  CANCELLED
+  REFUNDED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  DEBIT_CARD
+  PIX
+  BOLETO
+}
+
+// ============================================
+// MODELS
+// ============================================
+
+model User {
+  id           String   @id @default(uuid()) @db.VarChar(50)
+  name         String   @db.VarChar(255)
+  email        String   @unique @db.VarChar(255)
+  password     String   @db.VarChar(255)
+  role         UserRole @default(ATTENDEE)
+  phone        String?  @db.VarChar(20)
+  avatarUrl    String?  @db.VarChar(500)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relações
+  organizedEvents Event[]          @relation("EventOrganizer")
+  orders          Order[]
+  tickets         Ticket[]
+  checkIns        CheckIn[]
+  transfersSent   TicketTransfer[] @relation("TransferSender")
+  transfersReceived TicketTransfer[] @relation("TransferReceiver")
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model Event {
+  id           String      @id @default(uuid()) @db.VarChar(50)
+  title        String      @db.VarChar(255)
+  slug         String      @unique @db.VarChar(255)
+  description  String      @db.Text
+  shortDesc    String?     @db.VarChar(500)
+  venue        String      @db.VarChar(255)
+  address      String      @db.VarChar(500)
+  city         String      @db.VarChar(100)
+  state        String      @db.VarChar(50)
+  zipCode      String?     @db.VarChar(10)
+  date         DateTime
+  endDate      DateTime?
+  doorsOpen    DateTime?
+  imageUrl     String?     @db.VarChar(500)
+  status       EventStatus @default(DRAFT)
+  capacity     Int
+  isOnline     Boolean     @default(false)
+  onlineUrl    String?     @db.VarChar(500)
+  organizerId  String      @db.VarChar(50)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  // Relações
+  organizer    User         @relation("EventOrganizer", fields: [organizerId], references: [id])
+  ticketTypes  TicketType[]
+  tickets      Ticket[]
+  orders       Order[]
+  checkIns     CheckIn[]
+
+  @@index([slug])
+  @@index([date])
+  @@index([status])
+  @@index([organizerId])
+  @@index([city])
+  @@map("events")
+}
+
+model TicketType {
+  id            String   @id @default(uuid()) @db.VarChar(50)
+  name          String   @db.VarChar(100)
+  description   String?  @db.VarChar(500)
+  price         Decimal  @db.Decimal(10, 2)
+  quantity      Int
+  sold          Int      @default(0)
+  maxPerUser    Int      @default(5)
+  salesStart    DateTime?
+  salesEnd      DateTime?
+  isActive      Boolean  @default(true)
+  eventId       String   @db.VarChar(50)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relações
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tickets       Ticket[]
+  orderItems    OrderItem[]
+
+  @@index([eventId])
+  @@index([isActive])
+  @@map("ticket_types")
+}
+
+model Ticket {
+  id            String       @id @default(uuid()) @db.VarChar(50)
+  code          String       @unique @db.VarChar(50)
+  qrCode        String       @db.Text
+  qrCodeUrl     String?      @db.VarChar(500)
+  pdfUrl        String?      @db.VarChar(500)
+  status        TicketStatus @default(PENDING)
+  holderName    String       @db.VarChar(255)
+  holderEmail   String       @db.VarChar(255)
+  holderDoc     String?      @db.VarChar(20)
+  eventId       String       @db.VarChar(50)
+  ticketTypeId  String       @db.VarChar(50)
+  userId        String       @db.VarChar(50)
+  orderId       String       @db.VarChar(50)
+  transferCount Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // Relações
+  event         Event            @relation(fields: [eventId], references: [id])
+  ticketType    TicketType       @relation(fields: [ticketTypeId], references: [id])
+  user          User             @relation(fields: [userId], references: [id])
+  order         Order            @relation(fields: [orderId], references: [id])
+  checkIn       CheckIn?
+  transfers     TicketTransfer[]
+
+  @@index([code])
+  @@index([eventId])
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+  @@map("tickets")
+}
+
+model Order {
+  id              String      @id @default(uuid()) @db.VarChar(50)
+  orderNumber     String      @unique @db.VarChar(30)
+  status          OrderStatus @default(PENDING)
+  totalAmount     Decimal     @db.Decimal(10, 2)
+  serviceFee      Decimal     @default(0) @db.Decimal(10, 2)
+  discountAmount  Decimal     @default(0) @db.Decimal(10, 2)
+  finalAmount     Decimal     @db.Decimal(10, 2)
+  userId          String      @db.VarChar(50)
+  eventId         String      @db.VarChar(50)
+  expiresAt       DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relações
+  user            User       @relation(fields: [userId], references: [id])
+  event           Event      @relation(fields: [eventId], references: [id])
+  items           OrderItem[]
+  tickets         Ticket[]
+  payment         Payment?
+
+  @@index([orderNumber])
+  @@index([userId])
+  @@index([eventId])
+  @@index([status])
+  @@map("orders")
+}
+
+model TicketTransfer {
+  id            String   @id @default(uuid()) @db.VarChar(50)
+  ticketId      String   @db.VarChar(50)
+  senderId      String   @db.VarChar(50)
+  receiverId    String   @db.VarChar(50)
+  status        String   @default("PENDING") @db.VarChar(20) // PENDING, ACCEPTED, EXPIRED, CANCELLED
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ticket        Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender        User     @relation("TransferSender", fields: [senderId], references: [id])
+  receiver      User     @relation("TransferReceiver", fields: [receiverId], references: [id])
+
+  @@index([ticketId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([status])
+  @@map("ticket_transfers")
+}
+
+model OrderItem {
+  id            String   @id @default(uuid()) @db.VarChar(50)
+  quantity      Int
+  unitPrice     Decimal  @db.Decimal(10, 2)
+  totalPrice    Decimal  @db.Decimal(10, 2)
+  orderId       String   @db.VarChar(50)
+  ticketTypeId  String   @db.VarChar(50)
+  createdAt     DateTime @default(now())
+
+  // Relações
+  order         Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ticketType    TicketType @relation(fields: [ticketTypeId], references: [id])
+
+  @@index([orderId])
+  @@index([ticketTypeId])
+  @@map("order_items")
+}
+
+model Payment {
+  id                String        @id @default(uuid()) @db.VarChar(50)
+  externalId        String?       @unique @db.VarChar(255)
+  method            PaymentMethod @default(CREDIT_CARD)
+  status            PaymentStatus @default(PENDING)
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("BRL") @db.VarChar(3)
+  stripePaymentId   String?       @db.VarChar(255)
+  stripeClientSecret String?      @db.VarChar(255)
+  metadata          Json?
+  paidAt            DateTime?
+  failedAt          DateTime?
+  refundedAt        DateTime?
+  orderId           String        @unique @db.VarChar(50)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  // Relações
+  order             Order @relation(fields: [orderId], references: [id])
+
+  @@index([externalId])
+  @@index([stripePaymentId])
+  @@index([status])
+  @@map("payments")
+}
+
+model CheckIn {
+  id          String   @id @default(uuid()) @db.VarChar(50)
+  checkedAt   DateTime @default(now())
+  checkedBy   String?  @db.VarChar(255)
+  gate        String?  @db.VarChar(50)
+  notes       String?  @db.VarChar(500)
+  latitude    Decimal? @db.Decimal(10, 8)
+  longitude   Decimal? @db.Decimal(11, 8)
+  ticketId    String   @unique @db.VarChar(50)
+  eventId     String   @db.VarChar(50)
+  userId      String   @db.VarChar(50)
+  createdAt   DateTime @default(now())
+
+  // Relações
+  ticket      Ticket @relation(fields: [ticketId], references: [id])
+  event       Event  @relation(fields: [eventId], references: [id])
+  user        User   @relation(fields: [userId], references: [id])
+
+  @@index([ticketId])
+  @@index([eventId])
+  @@index([checkedAt])
+  @@map("check_ins")
+}

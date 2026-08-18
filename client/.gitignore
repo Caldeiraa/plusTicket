@@ -1,0 +1,7 @@
+# Ignorar apenas node_modules
+node_modules/
+
+# Garantir relatórios e documentações
+!*.doc
+!*.docx
+!*.txt
