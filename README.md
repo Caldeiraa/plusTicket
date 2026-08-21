@@ -56,7 +56,8 @@ O **plusTicket** é uma solução *end-to-end* projetada para revolucionar o cic
 - **Fluxo de Compra & Checkout**: Seleção de quantidades por lote, cálculo automático de taxas e pagamento integrado.
 - **Meus Ingressos**: Carteira digital com QR Code interativo para apresentação na portaria.
 - **Download de Ingressos em PDF**: Documento estilizado gerado via `PDFKit` contendo QR Code exclusivo e detalhes do titular.
-- **Notificações por E-mail**: Envio automático de confirmação de pedido e ingressos anexados em PDF.
+- **Devolução / Reembolso de Ingressos**: Solicitação de devolução com cálculo automático — **100% até 7 dias** após a compra, **50% após 7 dias**. Interface com modal de confirmação mostrando o valor calculado e política de devolução.
+- **Notificações por E-mail**: Envio automático de confirmação de pedido, ingressos em PDF e confirmação de reembolso.
 
 ### 🏢 Para Organizadores
 - **Criação e Gestão de Eventos**: Definição de datas, lotes, capacidade, limite de compras por usuário e banners.
@@ -168,7 +169,8 @@ plusTicket/
 │   │   │   ├── tickets/         # Reserva, compra e listagem de ingressos
 │   │   │   ├── payments/        # Integração Stripe e webhooks
 │   │   │   ├── checkin/         # Validação de QR Code na portaria
-│   │   │   └── dashboard/       # Métricas consolidadas e telemetria
+│   │   │   ├── dashboard/       # Métricas consolidadas e telemetria
+│   │   │   └── refunds/         # Devolução e reembolso de ingressos
 │   │   ├── services/            # Serviços de PDF, QR Code, e-mail e socket
 │   │   ├── utils/               # Logger (Winston) e helpers
 │   │   ├── app.js               # Configuração da aplicação Express
@@ -189,10 +191,11 @@ Principais entidades do sistema gerenciadas via **Prisma ORM**:
 - **`Event`**: Eventos criados com data, localização, capacidade e status.
 - **`TicketType`**: Tipos/Lotes de ingressos (Pista, VIP, Camarote) com preço e cota máxima.
 - **`Order` & `OrderItem`**: Pedidos de compra com controle de expiração e totalização.
-- **`Ticket`**: Ingressos individuais com identificador único, payload de QR Code e status (`PENDING`, `PAID`, `USED`, `CANCELLED`).
+- **`Ticket`**: Ingressos individuais com identificador único, payload de QR Code e status (`PENDING`, `PAID`, `USED`, `CANCELLED`, `REFUNDED`).
 - **`Payment`**: Registro de pagamentos associados à ordem (Stripe PaymentIntent / PIX).
 - **`CheckIn`**: Registro de entradas contendo timestamp, operador responsável e portão.
 - **`TicketTransfer`**: Histórico e controle de transferências de titularidade de ingressos.
+- **`Refund`**: Solicitações de reembolso com valor original, percentual (100% ou 50%), valor reembolsado, status e referência externa para Stripe.
 
 ---
 
@@ -227,6 +230,10 @@ Principais entidades do sistema gerenciadas via **Prisma ORM**:
 ### 📊 Dashboard do Organizador (`/api/dashboard`)
 - `GET /api/dashboard/overview` — Resumo geral de vendas e entradas
 - `GET /api/dashboard/events/:eventId` — Métricas detalhadas de um evento específico
+
+### 🔄 Devoluções / Reembolsos (`/api/refunds`)
+- `POST /api/refunds/:ticketId` — Solicitar devolução de ingresso (100% até 7 dias / 50% após)
+- `GET /api/refunds/my-refunds` — Listar reembolsos do usuário autenticado
 
 ---
 

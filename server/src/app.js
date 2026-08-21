@@ -14,6 +14,7 @@ const ticketsRoutes = require('./modules/tickets/tickets.routes');
 const paymentsRoutes = require('./modules/payments/payments.routes');
 const checkInRoutes = require('./modules/checkin/checkin.routes');
 const dashboardRoutes = require('./modules/dashboard/dashboard.routes');
+const refundsRoutes = require('./modules/refunds/refunds.routes');
 
 const app = express();
 
@@ -57,6 +58,7 @@ app.use('/api/tickets', ticketsRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/checkin', checkInRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/refunds', refundsRoutes);
 
 // ============================================
 // BULL BOARD (monitoramento de filas)

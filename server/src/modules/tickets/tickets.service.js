@@ -301,6 +301,9 @@ class TicketsService {
               receiver: { select: { id: true, name: true, email: true } },
             },
           },
+          refund: {
+            select: { id: true, status: true, refundPercent: true, refundAmount: true },
+          },
         },
       }),
       prisma.ticket.count({ where: { userId } }),

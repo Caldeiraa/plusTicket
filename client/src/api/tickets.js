@@ -54,4 +54,16 @@ export const ticketsApi = {
   getPendingTransfers: async () => {
     return await apiRequest('/tickets/transfers/pending');
   },
+
+  // Devoluções / Reembolsos
+  requestRefund: async (ticketId, reason) => {
+    return await apiRequest(`/refunds/${ticketId}`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  getMyRefunds: async () => {
+    return await apiRequest('/refunds/my-refunds');
+  },
 };
