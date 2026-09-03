@@ -24,6 +24,34 @@ class CheckInController {
       next(error);
     }
   }
+
+  async getOfflinePack(req, res, next) {
+    try {
+      const pack = await checkInService.getOfflinePack(req.params.eventId, req.user.id);
+      return ApiResponse.success(res, pack, 'Pacote offline gerado');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async syncOfflineCheckIns(req, res, next) {
+    try {
+      const { checkIns } = req.body;
+      if (!Array.isArray(checkIns) || checkIns.length === 0) {
+        return ApiResponse.badRequest(res, 'Envie um array de check-ins para sincronizar');
+      }
+      const result = await checkInService.syncOfflineCheckIns(
+        req.params.eventId,
+        checkIns,
+        req.user.id,
+        req.user.name
+      );
+      return ApiResponse.success(res, result, 'Sincronização concluída');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new CheckInController();
+

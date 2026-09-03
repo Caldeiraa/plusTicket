@@ -24,4 +24,21 @@ router.get(
   checkInController.getEventCheckIns
 );
 
+// Check-in Offline — Baixar pacote de ingressos para cache local
+router.get(
+  '/:eventId/offline-pack',
+  authMiddleware,
+  roleGuard('ORGANIZER', 'ADMIN'),
+  checkInController.getOfflinePack
+);
+
+// Check-in Offline — Sincronizar check-ins feitos offline
+router.post(
+  '/:eventId/sync',
+  authMiddleware,
+  roleGuard('ORGANIZER', 'ADMIN'),
+  checkInController.syncOfflineCheckIns
+);
+
 module.exports = router;
+

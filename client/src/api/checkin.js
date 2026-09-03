@@ -11,4 +11,16 @@ export const checkInApi = {
   getEventCheckIns: async (eventId) => {
     return await apiRequest(`/checkin/events/${eventId}`);
   },
+
+  getOfflinePack: async (eventId) => {
+    return await apiRequest(`/checkin/${eventId}/offline-pack`);
+  },
+
+  syncOfflineCheckIns: async (eventId, checkIns) => {
+    return await apiRequest(`/checkin/${eventId}/sync`, {
+      method: 'POST',
+      body: JSON.stringify({ checkIns }),
+    });
+  },
 };
+

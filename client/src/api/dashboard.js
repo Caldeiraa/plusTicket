@@ -8,4 +8,16 @@ export const dashboardApi = {
   getSummary: async (eventId) => {
     return await apiRequest(`/dashboard/events/${eventId}/summary`);
   },
+
+  getAnalytics: async (eventId) => {
+    return await apiRequest(`/dashboard/events/${eventId}/analytics`);
+  },
+
+  getGateAnalysis: async (eventId) => {
+    return await apiRequest(`/dashboard/events/${eventId}/gates`);
+  },
+
+  getInsights: async (eventId) => {
+    return await apiRequest(`/dashboard/events/${eventId}/insights`);
+  },
 };

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { QrCode, Download, Calendar, MapPin, AlertCircle, Send, CheckCircle2, Clock, RotateCcw } from 'lucide-react';
-import { formatDate, formatTime, formatCurrency, getStatusBadgeClass, translateStatus } from '../../utils/formatters';
+import { formatDate, formatTime, formatFullDateTime, formatCurrency, getStatusBadgeClass, translateStatus } from '../../utils/formatters';
+
 import { ticketsApi } from '../../api/tickets';
 import { Modal } from '../common/Modal';
 
@@ -226,48 +227,165 @@ export const TicketCard = ({ ticket, onRefresh }) => {
 
       </div>
 
-      {/* QR Code Modal */}
-      <Modal isOpen={qrModalOpen} onClose={() => setQrModalOpen(false)} title="Ingresso Digital">
-        <div className="flex flex-col items-center text-center space-y-4 py-2">
-          <div className="p-4 bg-white rounded-3xl shadow-2xl border-4 border-indigo-500/30 relative flex items-center justify-center min-w-[240px] min-h-[240px]">
-            {ticket.qrCode && ticket.qrCode.startsWith('data:image') ? (
-              <img
-                src={ticket.qrCode}
-                alt={`QR Code ${ticket.code}`}
-                className="w-52 h-52 object-contain"
-              />
-            ) : (
-              <QRCodeSVG
-                value={ticket.code || 'TICKET'}
-                size={220}
-                level="H"
-                includeMargin={true}
-              />
-            )}
-            {isUsed && (
-              <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs rounded-2xl flex flex-col items-center justify-center text-rose-400 p-2">
-                <AlertCircle className="w-12 h-12 mb-1" />
-                <span className="font-extrabold text-sm uppercase">Já Utilizado</span>
+      {/* Modal de Ingresso Digital Moderno (Estilo Apple Wallet) */}
+      <Modal isOpen={qrModalOpen} onClose={() => setQrModalOpen(false)} title="Carteira Digital | Ingresso">
+        <div className="space-y-4 py-1">
+          {/* Card Visual Estilo Apple Wallet */}
+          <div className="relative rounded-3xl overflow-hidden bg-gradient-to-b from-indigo-950 via-slate-900 to-slate-950 border border-indigo-500/30 shadow-2xl p-5 space-y-4 text-white">
+            
+            {/* Top Bar do Ticket */}
+            <div className="flex items-center justify-between border-b border-indigo-500/20 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center font-black text-sm">
+                  PT
+                </div>
+                <div>
+                  <span className="text-[10px] text-indigo-300 font-bold uppercase tracking-wider block">plusTicket Pass</span>
+                  <span className="text-xs font-extrabold text-white">{event?.title || 'Evento'}</span>
+                </div>
               </div>
-            )}
+
+              <span className={`px-2.5 py-1 rounded-full text-[10px] font-black tracking-wide border uppercase ${
+                isUsed
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : isRefunded
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+              }`}>
+                {isUsed ? '✓ Check-in Realizado' : translateStatus(ticket.status)}
+              </span>
+            </div>
+
+            {/* Informações Centrais */}
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-[10px] text-slate-400 block">LOTE / SETOR</span>
+                <span className="font-bold text-slate-100">{ticket.ticketType?.name || 'Ingresso'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 block">DATA & HORA</span>
+                <span className="font-bold text-slate-100">{formatDate(event?.date)} às {formatTime(event?.date)}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 block">LOCAL</span>
+                <span className="font-bold text-slate-100 line-clamp-1">{event?.venue || 'Local a confirmar'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 block">TITULAR</span>
+                <span className="font-bold text-slate-100 line-clamp-1">{ticket.holderName}</span>
+              </div>
+            </div>
+
+            {/* Divisória pontilhada com entalhes de ingresso */}
+            <div className="relative my-2 py-2 flex items-center">
+              <div className="w-full border-t-2 border-dashed border-slate-700/80"></div>
+            </div>
+
+            {/* QR Code Container */}
+            <div className="flex flex-col items-center justify-center space-y-2">
+              <div className="p-3 bg-white rounded-2xl shadow-xl border-4 border-indigo-500/20 relative flex items-center justify-center">
+                {ticket.qrCode && ticket.qrCode.startsWith('data:image') ? (
+                  <img
+                    src={ticket.qrCode}
+                    alt={`QR Code ${ticket.code}`}
+                    className="w-44 h-44 object-contain"
+                  />
+                ) : (
+                  <QRCodeSVG
+                    value={ticket.code || 'TICKET'}
+                    size={176}
+                    level="H"
+                    includeMargin={true}
+                  />
+                )}
+
+                {isUsed && (
+                  <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xs rounded-xl flex flex-col items-center justify-center text-emerald-400 p-2 animate-in zoom-in-95">
+                    <CheckCircle2 className="w-12 h-12 mb-1 text-emerald-400" />
+                    <span className="font-black text-sm uppercase tracking-wider text-white">✓ Check-in Realizado</span>
+                    <span className="text-[10px] text-emerald-300 font-mono mt-0.5">
+                      {ticket.checkIn?.checkedAt ? formatFullDateTime(ticket.checkIn.checkedAt) : 'Portaria Confirmada'}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="text-center">
+                <span className="font-mono text-xs font-bold tracking-widest text-indigo-300 block">
+                  #{ticket.code}
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  {isUsed ? 'Ingresso já utilizado e validado na portaria' : 'Apresente na entrada do evento para validação'}
+                </span>
+              </div>
+            </div>
+
+            {/* Timeline do Ciclo de Vida do Ingresso */}
+            <div className="pt-3 border-t border-slate-800 space-y-2">
+              <span className="text-[11px] font-bold text-slate-300 block">Histórico do Ingresso:</span>
+              
+              <div className="space-y-2 text-[11px]">
+                <div className="flex items-start gap-2 text-emerald-400">
+                  <span className="w-4 h-4 rounded-full bg-emerald-500/20 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">✓</span>
+                  <div>
+                    <span className="font-semibold text-slate-200">Compra Confirmada</span>
+                    <span className="text-[10px] text-slate-400 block">{formatFullDateTime(ticket.createdAt)}</span>
+                  </div>
+                </div>
+
+                {transferCount > 0 && (
+                  <div className="flex items-start gap-2 text-indigo-400">
+                    <span className="w-4 h-4 rounded-full bg-indigo-500/20 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">🔄</span>
+                    <div>
+                      <span className="font-semibold text-slate-200">Transferência de Titularidade</span>
+                      <span className="text-[10px] text-slate-400 block">{transferCount} transferência(s) realizada(s)</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className={`flex items-start gap-2 ${isUsed ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5 ${
+                    isUsed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'
+                  }`}>
+                    {isUsed ? '✓' : '○'}
+                  </span>
+                  <div>
+                    <span className={`font-semibold ${isUsed ? 'text-slate-200' : 'text-slate-500'}`}>
+                      {isUsed ? 'Check-in na Portaria' : 'Aguardando Check-in'}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block">
+                      {isUsed && ticket.checkIn?.checkedAt
+                        ? `Realizado em ${formatFullDateTime(ticket.checkIn.checkedAt)}`
+                        : 'Será registrado na leitura da portaria'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
 
-          <div className="space-y-1">
-            <p className="font-mono text-sm font-bold tracking-wider text-indigo-400">
-              {ticket.code}
-            </p>
-            <p className="text-xs text-slate-400">
-              Apresente este código na portaria do evento para validação instantânea.
-            </p>
-          </div>
-
-          <div className="w-full pt-4 border-t border-slate-800 text-left text-xs space-y-1.5 text-slate-300">
-            <p><strong>Evento:</strong> {event?.title}</p>
-            <p><strong>Tipo:</strong> {ticket.ticketType?.name}</p>
-            <p><strong>Titular:</strong> {ticket.holderName} ({ticket.holderEmail})</p>
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <a
+              href={ticketsApi.getDownloadPdfUrl(ticket.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Baixar Ingresso em PDF
+            </a>
+            <button
+              type="button"
+              onClick={() => setQrModalOpen(false)}
+              className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-semibold"
+            >
+              Fechar
+            </button>
           </div>
         </div>
       </Modal>
+
 
       {/* Modal de Transferência */}
       <Modal isOpen={transferModalOpen} onClose={() => setTransferModalOpen(false)} title="Transferir Ingresso por E-mail">

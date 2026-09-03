@@ -11,4 +11,9 @@ router.post('/login', validate(loginSchema), authController.login);
 router.get('/me', authMiddleware, authController.getProfile);
 router.post('/refresh', authController.refreshToken);
 
+// LGPD
+router.get('/export-data', authMiddleware, authController.exportUserData);
+router.post('/request-deletion', authMiddleware, authController.requestAccountDeletion);
+
 module.exports = router;
+

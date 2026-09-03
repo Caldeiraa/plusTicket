@@ -15,6 +15,7 @@ const paymentsRoutes = require('./modules/payments/payments.routes');
 const checkInRoutes = require('./modules/checkin/checkin.routes');
 const dashboardRoutes = require('./modules/dashboard/dashboard.routes');
 const refundsRoutes = require('./modules/refunds/refunds.routes');
+const auditLogRoutes = require('./modules/auditlog/auditlog.routes');
 
 const app = express();
 
@@ -59,6 +60,7 @@ app.use('/api/payments', paymentsRoutes);
 app.use('/api/checkin', checkInRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/refunds', refundsRoutes);
+app.use('/api/audit-logs', auditLogRoutes);
 
 // ============================================
 // BULL BOARD (monitoramento de filas)
@@ -95,6 +97,8 @@ app.get('/', (req, res) => {
       payments: '/api/payments',
       checkin: '/api/checkin',
       dashboard: '/api/dashboard',
+      refunds: '/api/refunds',
+      auditLogs: '/api/audit-logs',
     },
   });
 });

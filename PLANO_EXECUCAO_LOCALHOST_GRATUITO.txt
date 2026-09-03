@@ -1,0 +1,156 @@
+================================================================================
+           PLANO DE EXECUÇÃO E TESTES 100% LOCALHOST (CUSTO: R$ 0,00)
+                              SISTEMA plusTicket
+================================================================================
+
+1. RESPOSTA DIRETA: É POSSÍVEL RODAR E TESTAR 100% DE GRAÇA?
+--------------------------------------------------------------------------------
+SIM, 100% POSSÍVEL! Você NÃO precisa gastar nenhum centavo (R$ 0,00).
+
+Toda a infraestrutura do plusTicket foi projetada para rodar em ambiente de
+desenvolvimento local (localhost) com ferramentas gratuitas e de código aberto:
+
+  - Frontend (React 18 + Tailwind): Gratuito e roda localmente.
+  - Backend API (Node.js + Express): Gratuito e roda localmente.
+  - Banco de Dados (MySQL / MariaDB): Gratuito via XAMPP, Laragon ou Docker.
+  - Filas e Cache (Redis / BullMQ): Gratuito localmente via Redis Windows ou Docker.
+  - Pagamentos (Stripe Sandbox / PIX Simulado): 100% gratuito em modo de teste
+    (não debita dinheiro real e usa cartões de teste oficiais do Stripe).
+  - Envio de E-mails (Ethereal Email / Mailtrap): 100% gratuito (captura e-mails
+    em uma caixa postal virtual para você visualizar os ingressos enviados).
+  - Geração de PDF e Leitor de QR Code: 100% local com bibliotecas internas
+    (PDFKit e webcam do notebook/celular).
+
+--------------------------------------------------------------------------------
+2. ARQUITETURA DO SISTEMA NO LOCALHOST
+--------------------------------------------------------------------------------
+No seu computador, os serviços se comunicarão da seguinte forma:
+
+  [Navegador / Celular] ---> http://localhost:5173 (React Frontend)
+          │
+          ▼ (Chamadas REST JSON e WebSockets)
+  [Servidor Backend]   ---> http://localhost:3000 (Node.js / Express / Socket.IO)
+          │
+          ├──> [Banco de Dados] ---> localhost:3306 (MySQL/MariaDB via Prisma)
+          │
+          └──> [Filas BullMQ]  ---> localhost:6379 (Redis)
+                     │
+                     ├──> Worker PDF (Gera arquivo PDF do ingresso em uploads/)
+                     ├──> Worker E-mail (Envia para SMTP Ethereal/Mailtrap)
+                     └──> Bull Board UI ---> http://localhost:3000/admin/queues
+
+--------------------------------------------------------------------------------
+3. ETAPAS PARA COLOCAR TUDO PARA RODAR (PASSO A PASSO)
+--------------------------------------------------------------------------------
+
+FASE 1: PREPARAÇÃO DO AMBIENTE LOCAL (TUDO GRATUITO)
+---------------------------------------------------
+  1.1. Banco de Dados MySQL / MariaDB (Porta 3306):
+       - Se já tiver XAMPP, WampServer ou MariaDB instalado: basta iniciar o serviço MySQL.
+       - Criar o banco de dados vazio chamado `plusticket`.
+  
+  1.2. Redis Server (Porta 6379):
+       - Utilizar o Redis para Windows (executável leve) ou Docker (`docker run -p 6379:6379 redis`).
+       - Caso o Redis não esteja rodando, a API possui mecanismo de contingência
+         que continua funcionando sem travar.
+
+  1.3. Contas de Teste Gratuitas (Opcional, leva 2 minutos):
+       - Stripe Test Mode: Obter chaves gratuitas `pk_test_...` e `sk_test_...`
+         no painel de desenvolvedor da Stripe (sem informar cartão de crédito).
+       - Ethereal Email: Gerador automático de credenciais de e-mail de teste falsas
+         para capturar os e-mails enviados.
+
+FASE 2: CONFIGURAÇÃO E BANCO DE DADOS
+------------------------------------
+  2.1. Configurar o arquivo `server/.env`:
+       DATABASE_URL="mysql://root:senha@localhost:3306/plusticket"
+       PORT=3000
+       JWT_SECRET="chave_super_secreta_local"
+       REDIS_HOST="localhost"
+       REDIS_PORT=6379
+
+  2.2. Criar as tabelas automaticamente com Prisma:
+       Comando no backend: `npx prisma db push` ou `npx prisma migrate dev`
+  
+  2.3. Popular o banco com dados de teste (Seed):
+       Comando no backend: `npm run db:seed`
+       (Gera automaticamente usuários de teste: ADMIN, ORGANIZER, ATTENDEE,
+       eventos com lotes de ingressos e dados prontos para testar).
+
+FASE 3: INICIALIZAÇÃO DOS SERVIDORES
+------------------------------------
+  3.1. Iniciar o Backend:
+       Diretório: `server/`
+       Comando: `npm run dev`
+       Endereço: http://localhost:3000
+       Painel de Filas: http://localhost:3000/admin/queues
+
+  3.2. Iniciar o Frontend:
+       Diretório: `client/`
+       Comando: `npm start` ou `npm run dev`
+       Endereço: http://localhost:5173
+
+--------------------------------------------------------------------------------
+4. ROTEIRO COMPLETO DE TESTES NO LOCALHOST
+--------------------------------------------------------------------------------
+Você poderá testar todas as funcionalidades do sistema na prática:
+
+  TESTE 1: Autenticação e Perfis
+  - Fazer login como Comprador (ATTENDEE), Organizador (ORGANIZER) e Administrador (ADMIN).
+  - Testar criação de conta nova e expiração de sessão JWT.
+
+  TESTE 2: Criação e Gestão de Eventos (Visão Organizador)
+  - Criar um evento novo com data, local, capacidade e imagem de banner.
+  - Cadastrar lotes de ingressos (ex: Pista R$ 50,00 com 100 vagas, VIP R$ 120,00 com 30 vagas).
+
+  TESTE 3: Catálogo, Compra e Checkout (Visão Participante)
+  - Navegar no catálogo, filtrar eventos e selecionar quantidades por lote.
+  - Finalizar o pedido utilizando o cartão de teste do Stripe (ex: 4242 4242 4242 4242).
+  - Verificar a emissão imediata dos ingressos na carteira digital ("Meus Ingressos").
+
+  TESTE 4: Geração de PDF e Envio Assíncrono
+  - Clicar no botão "Baixar PDF" e inspecionar o arquivo estilizado com QR Code gerado pelo PDFKit.
+  - Inspecionar a fila no Bull Board (http://localhost:3000/admin/queues) vendo os jobs concluídos.
+
+  TESTE 5: Check-in na Portaria com Câmera e WebSockets
+  - Abrir a tela de Scanner no computador (ou no celular conectado no mesmo Wi-Fi).
+  - Apontar a câmera para o QR Code do ingresso do participante.
+  - Observar o feedback sonoro e visual instantâneo ("Ingresso Válido").
+  - Testar a tentativa de escanear o mesmo ingresso pela 2ª vez e comprovar o bloqueio ("Ingresso Já Utilizado").
+  - Ver o painel do Organizador atualizar em tempo real via WebSockets sem recarregar a tela.
+
+  TESTE 6: Devolução e Reembolso Automático
+  - Como participante, solicitar devolução de um ingresso.
+  - Comprovar o cálculo da regra de negócio:
+    * Se comprado há até 7 dias: Reembolso de 100% do valor.
+    * Se comprado há mais de 7 dias: Reembolso de 50% do valor.
+  - Observar a mudança de status do ingresso para REFUNDED e a liberação de vaga.
+
+--------------------------------------------------------------------------------
+5. CASO QUISESSE SUBIR PARA PRODUÇÃO NA NUVEM (ESTIMATIVA DE CUSTOS)
+--------------------------------------------------------------------------------
+Se no futuro (após o término da faculdade) você quisesse colocar o sistema
+na internet para clientes reais, aqui está a estimativa de custos:
+
+OPÇÃO 1: NUVEM COM PLANOS GRATUITOS (CUSTO: R$ 0,00/mês)
+  - Frontend: Vercel ou Netlify (Gratuito)
+  - Backend: Render.com ou Railway Starter (Gratuito / US$ 5 de crédito)
+  - Banco de Dados: Supabase / PlanetScale / Aiven MySQL (Gratuito)
+  - Redis: Upstash Serverless Redis (Gratuito até 10.000 requisições/dia)
+  - Domínio .com.br (Opcional): ~R$ 40,00/ano no Registro.br
+
+OPÇÃO 2: SERVIDOR VPS PROFISSIONAL (Ambiente de Produção Comercial)
+  - Servidor VPS Hetzner ou Hostinger (2 vCPU, 4GB RAM): ~R$ 35,00 a R$ 60,00/mês
+  - Domínio próprio: ~R$ 40,00/ano
+  - Gateway de Pagamento (Stripe/Mercado Pago): Sem custo fixo mensal
+    (cobra apenas % por venda aprovada, ex: ~3.99% + taxa fixa por transação).
+
+--------------------------------------------------------------------------------
+6. PRÓXIMOS PASSOS SUGERIDOS PARA EXECUÇÃO
+--------------------------------------------------------------------------------
+1. Confirmar se você já tem MySQL / MariaDB rodando na sua máquina (ex: XAMPP).
+2. Gerar as tabelas do Prisma (`npx prisma db push`).
+3. Executar o seed com os dados de exemplo (`npm run db:seed`).
+4. Subir o backend e o frontend para você navegar e testar todas as telas.
+
+================================================================================

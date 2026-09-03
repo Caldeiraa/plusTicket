@@ -32,4 +32,15 @@ export const authApi = {
   logout: () => {
     setAuthToken(null);
   },
+
+  exportUserData: async () => {
+    return await apiRequest('/auth/export-data');
+  },
+
+  requestDeletion: async () => {
+    return await apiRequest('/auth/request-deletion', {
+      method: 'POST',
+    });
+  },
 };
+

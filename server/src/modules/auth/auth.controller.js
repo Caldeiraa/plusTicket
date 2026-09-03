@@ -41,6 +41,25 @@ class AuthController {
       next(error);
     }
   }
+
+  async exportUserData(req, res, next) {
+    try {
+      const data = await authService.exportUserData(req.user.id);
+      return ApiResponse.success(res, data, 'Dados pessoais exportados com sucesso');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async requestAccountDeletion(req, res, next) {
+    try {
+      const result = await authService.requestAccountDeletion(req.user.id);
+      return ApiResponse.success(res, result, 'Conta desativada com sucesso');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new AuthController();
+

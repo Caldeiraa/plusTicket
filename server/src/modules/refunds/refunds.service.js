@@ -1,6 +1,7 @@
 const { prisma } = require('../../config/database');
 const refundPaymentService = require('../../services/refundService');
 const { addEmailJob } = require('../../jobs/queues');
+const auditLog = require('../auditlog/auditlog.service');
 const logger = require('../../utils/logger');
 
 /**
@@ -194,6 +195,9 @@ class RefundsService {
       `✅ Reembolso processado: Ticket ${ticket.code} | R$ ${refundAmount.toFixed(2)} (${percent}%) | ` +
       `Ref: ${paymentResult.externalRefundId}`
     );
+
+    // Registrar reembolso no AuditLog
+    auditLog.logRefund({ id: refund.id, refundPercent: percent, refundAmount }, ticket, userId);
 
     return {
       refundId: refund.id,

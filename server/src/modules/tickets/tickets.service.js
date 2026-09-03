@@ -2,6 +2,7 @@ const { prisma } = require('../../config/database');
 const { v4: uuidv4 } = require('uuid');
 const { generateQRCodeDataUrl } = require('../../services/qrCodeGenerator');
 const { generateTicketPDF } = require('../../services/pdfGenerator');
+const auditLog = require('../auditlog/auditlog.service');
 const logger = require('../../utils/logger');
 
 class TicketsService {
@@ -206,6 +207,10 @@ class TicketsService {
     });
 
     logger.info(`Pedido finalizado [TESTE]: ${order.orderNumber} - Total R$ ${finalAmount}`);
+
+    // Registrar compra no AuditLog
+    auditLog.logPurchase(order, userId, user?.name || 'Participante');
+
     return { order, tickets };
   }
 
@@ -414,6 +419,10 @@ class TicketsService {
     });
 
     logger.info(`Transferência iniciada: Ticket ${ticket.code} para ${receiver.email} (Expira em 30 min)`);
+
+    // Registrar transferência no AuditLog
+    auditLog.logTransfer(transfer, senderId, null, receiver.email);
+
     return transfer;
   }
 

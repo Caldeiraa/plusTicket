@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { QrCode, CheckCircle2, XCircle, ArrowLeft, Volume2, ShieldCheck, MapPin, Camera } from 'lucide-react';
+import { QrCode, CheckCircle2, XCircle, ArrowLeft, Volume2, ShieldCheck, MapPin, Camera, Wifi, WifiOff, Download, RefreshCw } from 'lucide-react';
+
 import { checkInApi } from '../api/checkin';
 import { eventsApi } from '../api/events';
 import { soundManager } from '../utils/sound';
@@ -77,9 +78,159 @@ export const CheckInScanner = () => {
     };
   }, [selectedEventId, gate]);
 
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [offlinePack, setOfflinePack] = useState(null);
+  const [pendingSync, setPendingSync] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+
+  // Carregar cache offline e pendentes do localStorage
+  useEffect(() => {
+    if (!selectedEventId) return;
+    try {
+      const cachedPack = localStorage.getItem(`plusticket_offline_pack_${selectedEventId}`);
+      if (cachedPack) {
+        setOfflinePack(JSON.parse(cachedPack));
+      }
+      const cachedPending = localStorage.getItem(`plusticket_pending_sync_${selectedEventId}`);
+      if (cachedPending) {
+        setPendingSync(JSON.parse(cachedPending));
+      }
+    } catch (e) {
+      console.error('Erro ao ler cache offline do localStorage:', e);
+    }
+  }, [selectedEventId]);
+
+  // Baixar pacote de ingressos para validação offline
+  const handleDownloadOfflinePack = async () => {
+    if (!selectedEventId) return;
+    setProcessing(true);
+    try {
+      const res = await checkInApi.getOfflinePack(selectedEventId);
+      if (res.success && res.data) {
+        setOfflinePack(res.data);
+        localStorage.setItem(`plusticket_offline_pack_${selectedEventId}`, JSON.stringify(res.data));
+        soundManager.playSuccess();
+        alert(`Pacote offline sincronizado com sucesso! ${res.data.totalValid} ingressos válidos prontos para validação sem internet.`);
+      } else {
+        alert(res.message || 'Falha ao baixar pacote offline.');
+      }
+    } catch (err) {
+      alert(`Erro ao baixar pacote offline: ${err.message}`);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Sincronizar check-ins pendentes feitos offline com o servidor
+  const handleSyncPending = async () => {
+    if (!selectedEventId || pendingSync.length === 0 || syncing) return;
+    setSyncing(true);
+    try {
+      const res = await checkInApi.syncOfflineCheckIns(selectedEventId, pendingSync);
+      if (res.success) {
+        soundManager.playSuccess();
+        alert(`Sincronização concluída! ${res.data.synced} validados, ${res.data.alreadyUsed} já utilizados anteriormente.`);
+        setPendingSync([]);
+        localStorage.removeItem(`plusticket_pending_sync_${selectedEventId}`);
+        // Atualizar pacote offline local
+        handleDownloadOfflinePack();
+      } else {
+        alert(res.message || 'Erro ao sincronizar com o servidor.');
+      }
+    } catch (err) {
+      alert(`Erro na sincronização: ${err.message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // Validação local no pacote offline
+  const processOfflineCheckIn = (code) => {
+    if (!offlinePack || !offlinePack.validTickets) {
+      soundManager.playError();
+      const errObj = {
+        success: false,
+        message: 'MODO OFFLINE: Nenhum pacote de ingressos sincronizado na memória deste aparelho!',
+        time: new Date().toLocaleTimeString('pt-BR'),
+      };
+      setLastResult(errObj);
+      return;
+    }
+
+    const cleanCode = code.trim().toUpperCase();
+    const isUsed = offlinePack.usedCodes && offlinePack.usedCodes.includes(cleanCode);
+    if (isUsed) {
+      soundManager.playError();
+      const errObj = {
+        success: false,
+        message: 'INGRESSO JÁ UTILIZADO (Validação Offline)',
+        time: new Date().toLocaleTimeString('pt-BR'),
+      };
+      setLastResult(errObj);
+      return;
+    }
+
+    const ticket = offlinePack.validTickets.find((t) => t.code.toUpperCase() === cleanCode);
+    if (!ticket) {
+      soundManager.playError();
+      const errObj = {
+        success: false,
+        message: 'INGRESSO INVÁLIDO OU NÃO ENCONTRADO (Validação Offline)',
+        time: new Date().toLocaleTimeString('pt-BR'),
+      };
+      setLastResult(errObj);
+      return;
+    }
+
+    // Ingresso válido offline! Atualizar lista local para bloquear segunda leitura
+    const updatedPack = {
+      ...offlinePack,
+      usedCodes: [...(offlinePack.usedCodes || []), cleanCode],
+      validTickets: offlinePack.validTickets.filter((t) => t.code.toUpperCase() !== cleanCode),
+    };
+    setOfflinePack(updatedPack);
+    localStorage.setItem(`plusticket_offline_pack_${selectedEventId}`, JSON.stringify(updatedPack));
+
+    // Gravar nos pendentes de sincronização
+    const newPendingItem = {
+      ticketCode: cleanCode,
+      gate: gate || 'Portão Principal (Offline)',
+      checkedAt: new Date().toISOString(),
+    };
+    const updatedPending = [...pendingSync, newPendingItem];
+    setPendingSync(updatedPending);
+    localStorage.setItem(`plusticket_pending_sync_${selectedEventId}`, JSON.stringify(updatedPending));
+
+    soundManager.playSuccess();
+    const successObj = {
+      success: true,
+      message: 'CHECK-IN OFFLINE CONFIRMADO! (Pendente de sincronização)',
+      data: {
+        ticketCode: ticket.code,
+        holderName: ticket.holderName,
+        ticketType: ticket.ticketType,
+        gate: gate || 'Offline',
+      },
+      time: new Date().toLocaleTimeString('pt-BR'),
+    };
+    setLastResult(successObj);
+    setCheckInHistory((prev) => [successObj, ...prev]);
+  };
+
   const handleScannedCode = async (codeToProcess) => {
     if (processing || !codeToProcess) return;
     setProcessing(true);
+
+    const cleanCode = codeToProcess.trim();
+
+    // Se estiver em modo offline forçado ou sem internet, valida localmente
+    if (offlineMode || !navigator.onLine) {
+      processOfflineCheckIn(cleanCode);
+      setProcessing(false);
+      setManualModalOpen(false);
+      setManualCode('');
+      return;
+    }
 
     let lat = null;
     let lng = null;
@@ -97,7 +248,8 @@ export const CheckInScanner = () => {
 
     try {
       const payload = {
-        code: codeToProcess.trim(),
+        ticketCode: cleanCode,
+        code: cleanCode,
         eventId: selectedEventId,
         gate: gate || 'Portão Principal',
         latitude: lat || undefined,
@@ -125,18 +277,25 @@ export const CheckInScanner = () => {
         });
       }
     } catch (err) {
-      soundManager.playError();
-      setLastResult({
-        success: false,
-        message: err.message || 'CÓDIGO NÃO ENCONTRADO',
-        time: new Date().toLocaleTimeString('pt-BR'),
-      });
+      // Se a requisição falhar por rede, recorre ao fallback offline se houver pacote cacheado
+      if (offlinePack && offlinePack.validTickets) {
+        console.warn('Conexão instável. Acionando validação offline...');
+        processOfflineCheckIn(cleanCode);
+      } else {
+        soundManager.playError();
+        setLastResult({
+          success: false,
+          message: err.message || 'CÓDIGO NÃO ENCONTRADO',
+          time: new Date().toLocaleTimeString('pt-BR'),
+        });
+      }
     } finally {
       setProcessing(false);
       setManualModalOpen(false);
       setManualCode('');
     }
   };
+
 
   return (
     <div className="max-w-xl mx-auto space-y-6 pb-20">
@@ -199,7 +358,56 @@ export const CheckInScanner = () => {
             />
           </div>
         </div>
+
+        {/* Painel de Modo Offline & Sincronização */}
+        <div className="pt-3 border-t border-slate-800/80">
+          <div className="bg-slate-900/80 rounded-2xl p-3 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setOfflineMode(!offlineMode)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  offlineMode
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                }`}
+              >
+                {offlineMode ? <WifiOff className="w-3.5 h-3.5" /> : <Wifi className="w-3.5 h-3.5" />}
+                {offlineMode ? 'Modo Offline Forçado' : 'Online'}
+              </button>
+
+              <span className="text-[11px] text-slate-400">
+                {offlinePack
+                  ? `${offlinePack.validTickets?.length || 0} ingressos no cache`
+                  : 'Sem cache local'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={handleDownloadOfflinePack}
+                disabled={processing || !selectedEventId}
+                className="flex-1 sm:flex-none px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                title="Baixar todos os ingressos deste evento para validar sem internet"
+              >
+                <Download className="w-3.5 h-3.5 text-indigo-400" />
+                Baixar Cache Offline
+              </button>
+
+              {pendingSync.length > 0 && (
+                <button
+                  onClick={handleSyncPending}
+                  disabled={syncing}
+                  className="flex-1 sm:flex-none px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-950/50 animate-pulse"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+                  Sincronizar ({pendingSync.length})
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
+
 
       {/* RESULT BANNER OVERLAY (SUCCESS GREEN / ERROR RED) */}
       {lastResult && (

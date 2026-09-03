@@ -19,4 +19,27 @@ router.get(
   dashboardController.getSummary
 );
 
+// Novos endpoints — Fase 1
+router.get(
+  '/events/:id/analytics',
+  authMiddleware,
+  roleGuard('ORGANIZER', 'ADMIN'),
+  dashboardController.getAnalytics
+);
+
+router.get(
+  '/events/:id/gates',
+  authMiddleware,
+  roleGuard('ORGANIZER', 'ADMIN'),
+  dashboardController.getGateAnalysis
+);
+
+router.get(
+  '/events/:id/insights',
+  authMiddleware,
+  roleGuard('ORGANIZER', 'ADMIN'),
+  dashboardController.getInsights
+);
+
 module.exports = router;
+
