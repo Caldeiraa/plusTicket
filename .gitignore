@@ -1,9 +1,0 @@
-# Ignorar apenas node_modules
-node_modules/
-client/node_modules/
-server/node_modules/
-
-# Garantir que todos os relatórios e documentações (.doc, .docx, .txt) sejam incluídos
-!*.doc
-!*.docx
-!*.txt
